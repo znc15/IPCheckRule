@@ -1,0 +1,44 @@
+name: Update IP Check Rules
+
+on:
+  push:
+    paths:
+      - 'ip-check.list'
+      - '.github/workflows/update-ip-check-rules.yml'
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate ip-check.yaml from ip-check.list
+        run: |
+          awk 'BEGIN { print "payload:" } NF && $1 !~ /^#/ { gsub(/\r/, ""); print "  - \047" $0 "\047" }' ip-check.list > ip-check.yaml
+
+      - name: Download mihomo
+        run: |
+          set -euo pipefail
+          MIHOMO_URL="$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/tags/Prerelease-Alpha \
+            | jq -r '.assets[] | select(.name | test("^mihomo-linux-amd64-alpha-.*\\.gz$")) | .browser_download_url' \
+            | head -n 1)"
+          [ -n "$MIHOMO_URL" ]
+          curl -fsSL -o mihomo.gz "$MIHOMO_URL"
+          gzip -df mihomo.gz
+          chmod +x mihomo
+
+      - name: Generate ip-check.mrs
+        run: ./mihomo convert-ruleset domain yaml ip-check.yaml ip-check.mrs
+
+      - name: Commit updated artifacts
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore: auto update ip-check rules'
+          file_pattern: ip-check.yaml ip-check.mrs
